@@ -3,6 +3,12 @@
 from nutils import *
 
 def makeplot ( name, topo, geom, funcsp  ):
+  
+  levels = dof_levels( funcsp )
+
+  print type(levels)
+  print levels
+
   points, vals = topo.elem_eval( [geom[0],funcsp], ischeme='bezier10', separate=True )
   ticks = numeric.unique( topo.elem_eval( geom[0], ischeme='bezier2', separate=False ) )
   with plot.PyPlot(name) as plt:
@@ -24,6 +30,8 @@ def dof_levels( funcsp ):
   levels = -numeric.ones( funcsp.shape[0], dtype=int )
   for elem, idofs in dofaxis.dofmap.items():
     stds = func.stdmap[elem]
+    print stds
+    print elem
     assert len(elem) - 1 == len(stds)
     for i, std in enumerate( stds ):
       level = len(stds) - i - 1
@@ -76,7 +84,6 @@ def main ( nelems = 8,
 
   makeplot( 'refined_2', topo, geom, funcsp )
 
-  print dof_levels( funcsp )
 
 def alternative ( nelems = 8,
                   degree = 2,
