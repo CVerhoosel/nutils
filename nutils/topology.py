@@ -1965,70 +1965,120 @@ class HierarchicalTopology(Topology):
     if name == 'discont':
       return super().basis(name, *args, **kwargs)
 
-    # The law: a basis function is retained if all elements of self can
-    # evaluate it through cascade, and at least one element of self can
-    # evaluate it directly.
+    # This function constructs the truncated hierarchical basis with a given hierarchial mesh.
 
-    # Procedure: per refinement level, track which basis functions have at
-    # least one supporting element coinsiding with self ('touched') and no
-    # supporting element finer than self ('supported').
+    #############################
+    # Constructing funtion sets #
+    #############################
 
-    dofs_coeffs = []
-    renumber = []
-    supports = []
-    length = 0
+    ubasis_dofscoeffs = []
+    ubasis_active     = [] # active functions in basis β^l for all levels
+    ubasis_passive    = [] # passive functions in basis β^l for all levels
+    dof_renumber      = [] # function indices in hierarchical basis for all levels
 
-    for topo in log.iter('level', self.levels):
+    offset = -1
+    for ltopo in self.levels:
 
-      basis = topo.basis(name, *args, **kwargs) # shape functions for current level
+      ubasis = ltopo.basis(name, *args, **kwargs)
 
-      supported = numpy.ones(len(basis), dtype=bool) # True if dof is fully contained in self or parents
-      touchtopo = numpy.zeros(len(basis), dtype=bool) # True if dof touches at least one elem in self
+      on_current = numpy.zeros(len(ubasis), dtype=bool)   # functions in basis β^l with support on Ω^l \ Ω^{l+1}
+      on_coarser = numpy.zeros(len(ubasis), dtype=bool)   # functions in basis β^l with support on Ω^0 \ Ω^l
 
-      (axes,func), = function.blocks(basis)
-      dofmap, = axes
-      if isinstance(func, function.Polyval):
-        coeffs = func.coeffs
-        assert coeffs.ndim == 1+self.ndims
-      elif func.isconstant:
-        assert func.ndim == 1
-        coeffs = func[(slice(None),*(_,)*self.ndims)]
-      else:
-        raise ValueError
+      # get the basis dofmap and coefficients
+      (ubasis_axes,ubasis_func), = function.blocks(ubasis)
+      ubasis_dofmap, = ubasis_axes
+      ubasis_coeffs  = ubasis_func.coeffs
 
-      for elem in topo:
+      ubasis_dofscoeffs.append( function.Tuple((ubasis_dofmap,ubasis_coeffs)) )
+
+      for elem in ltopo:
         trans = elem.transform
-        idofs, = dofmap.eval(_transforms=(elem.transform, elem.opposite))
+        ubasis_idofs, = ubasis_dofscoeffs[-1][0].eval (_transforms=(trans, elem.opposite))
+
         if trans in self.edict:
-          touchtopo[idofs] = True
+          # mark functions with support on current level Ω^l \ Ω^{l+1}
+          on_current[ubasis_idofs] = True
         elif transform.lookup(trans, self.edict):
-          supported[idofs] = False
+          # mark functions with support on coarser level Ω^0 \ Ω^l
+          on_coarser[ubasis_idofs] = True
 
-      support = supported & touchtopo
-      supports.append(support)
-      cumsum_support = numpy.cumsum(support)
-      renumber.append(cumsum_support+(length-1))
-      length += cumsum_support[-1]
-      dofs_coeffs.append(function.Tuple((dofmap, coeffs)))
+      ubasis_active  .append( (on_current & ~on_coarser) )           # functions with support on Ω^l \ Ω^{l+1} and not on Ω^0 \ Ω^l
+      ubasis_passive .append( on_coarser )                           # passive functions are (unactive) functions with support on Ω^0 \ Ω^l
 
-    dofs = []
-    coeffs = []
-    transforms = tuple(sorted(elem.transform for elem in self))
-    for trans in transforms:
-      hcoeffs = []
-      hdofs = []
-      ibase, tail = transform.lookup_item(trans, self.basetopo.edict)
-      for ilevel in range(len(tail)+1):
-        (idofs,), (icoeffs,) = dofs_coeffs[ilevel].eval(_transforms=(trans,))
-        isupport = supports[ilevel][idofs]
-        if not isupport.any():
-          continue
-        hdofs.extend(map(renumber[ilevel].__getitem__, idofs[isupport]))
-        hcoeffs.extend(transform.transform_poly(tail[ilevel:], icoeffs[isupport]))
-      dofs.append(numeric.const(hdofs))
-      coeffs.append(numeric.poly_stack(hcoeffs))
+      dof_renumber.append( numpy.cumsum((on_current & ~on_coarser))+offset ) # active functions are assigned an index in the truncated hierarchical basis
+      offset += sum(ubasis_active[-1])
 
-    return function.polyfunc(coeffs, dofs, length, transforms, issorted=True)
+    #############################
+    # Assembling basis          #
+    #############################
+
+    hbasis_transforms = tuple(sorted(elem.transform for elem in self))
+    hbasis_dofs       = []
+    hbasis_coeffs     = []
+
+    for hbasis_trans in hbasis_transforms:
+
+      trans_dofs = []
+      trans_coeffs = []
+
+      # determing the level of the hierarchicafiner_ubasis_passivel element
+      ibase, tail = transform.lookup_item(hbasis_trans, self.basetopo.edict)
+      hlevel = len(tail)
+
+      (tbasis_idofs,), (tbasis_icoeffs,) = ubasis_dofscoeffs[hlevel].eval(_transforms=(hbasis_trans,))
+
+      # initiating lists
+      finer_ubasis_idofs   = tbasis_idofs
+      finer_ubasis_icoeffs = tbasis_icoeffs
+      finer_ubasis_active  = ubasis_active [hlevel][finer_ubasis_idofs]
+      finer_ubasis_passive = ubasis_passive[hlevel][finer_ubasis_idofs]
+
+      if finer_ubasis_active.any():
+        trans_dofs  .extend( dof_renumber[hlevel][finer_ubasis_idofs[finer_ubasis_active]] )
+        trans_coeffs.extend( finer_ubasis_icoeffs[finer_ubasis_active] )
+
+      elem_degree = finer_ubasis_icoeffs.shape[1] #TODO: GENERALIZE TO WORK FOR ALL CASES!
+
+      # ascend until the coarsest level
+      for l in range(hlevel-1,-1,-1):
+
+        if not finer_ubasis_passive.any():
+          break
+
+        (current_ubasis_idofs,), (current_ubasis_icoeffs,) = ubasis_dofscoeffs[l].eval(_transforms=(hbasis_trans,))
+
+        ref = element.LineReference()**self.ndims
+        assert finer_ubasis_icoeffs.shape[1] == elem_degree
+        points, weights = ref.getischeme('gauss{}'.format(2*elem_degree) ) # replace degree
+
+        finer_ubasis_vals = numpy.array([numeric.poly_eval(numpy.array([poly]), points) for poly in finer_ubasis_icoeffs])
+        current_ubasis_vals = numpy.array([numeric.poly_eval(numpy.array([poly]), points) for poly in transform.transform_poly(tail[l:],current_ubasis_icoeffs)])
+
+        proj_lhs = (weights[_,_,:]*finer_ubasis_vals[:,_,:]*finer_ubasis_vals[_,:,:]).sum(-1)
+        proj_rhs = (weights[_,_,:]*finer_ubasis_vals[:,_,:]*current_ubasis_vals[_,:,:]).sum(-1)
+        scales = numpy.linalg.solve(proj_lhs,proj_rhs)
+
+        current_ubasis_active  = ubasis_active [l][current_ubasis_idofs]
+        current_ubasis_passive = ubasis_passive[l][current_ubasis_idofs]
+
+        tbasis_icoeffs = numpy.tensordot(scales[finer_ubasis_passive].T, tbasis_icoeffs[finer_ubasis_passive], axes = 1) # Tensordot for multivariate cases
+
+        if current_ubasis_active.any():
+          trans_dofs.extend(dof_renumber[l][current_ubasis_idofs[current_ubasis_active]])
+          trans_coeffs.extend( tbasis_icoeffs[current_ubasis_active] )
+
+        finer_ubasis_idofs   = current_ubasis_idofs
+        finer_ubasis_icoeffs = transform.transform_poly(tail[l:],current_ubasis_icoeffs)
+        finer_ubasis_passive = ubasis_passive[l][finer_ubasis_idofs]
+
+
+      assert len(trans_dofs)>=elem_degree, 'error msg' #determine degree per element
+
+      # add the dofs and coefficients to the hierarchical basis
+      hbasis_dofs  .append( numeric.const(trans_dofs)        )
+      hbasis_coeffs.append( numeric.poly_stack(trans_coeffs) )
+
+    return function.polyfunc(hbasis_coeffs, hbasis_dofs, offset+1, hbasis_transforms, issorted=True)
 
 class ProductTopology(Topology):
   'product topology'
