@@ -1962,7 +1962,8 @@ class HierarchicalTopology(Topology):
 
   @log.title
   def basis(self, name, *args, **kwargs):
-    'build hierarchical function space'
+    if name == 'discont':
+      return super().basis(name, *args, **kwargs)
 
     # The law: a basis function is retained if all elements of self can
     # evaluate it through cascade, and at least one element of self can
