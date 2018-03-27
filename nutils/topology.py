@@ -162,6 +162,21 @@ class Topology:
     f = getattr(self, 'basis_' + name)
     return f(*args, **kwargs)
 
+  def basis_discont(self, degree):
+    'discontinuous shape functions'
+
+    assert numeric.isint(degree) and degree >= 0
+    coeffs = []
+    nmap = []
+    ndofs = 0
+    for elem in self:
+      elemcoeffs = elem.reference.get_poly_coeffs('bernstein', degree=degree)
+      coeffs.append(elemcoeffs)
+      nmap.append(numeric.const(ndofs + numpy.arange(len(elemcoeffs)), copy=False))
+      ndofs += len(elemcoeffs)
+    degrees = set(n-1 for c in coeffs for n in c.shape[1:])
+    return function.polyfunc(coeffs, nmap, ndofs, (elem.transform for elem in self), issorted=False)
+
   @log.title
   @util.single_or_multiple
   def elem_eval(self, funcs, ischeme, separate=False, geometry=None, asfunction=False, edit=_identity, *, arguments=None):
@@ -1508,21 +1523,6 @@ class UnstructuredTopology(Topology):
   def basis_spline(self, degree):
     assert degree == 1
     return self.basis('std', degree)
-
-  def basis_discont(self, degree):
-    'discontinuous shape functions'
-
-    assert numeric.isint(degree) and degree >= 0
-    coeffs = []
-    nmap = []
-    ndofs = 0
-    for elem in self:
-      elemcoeffs = elem.reference.get_poly_coeffs('bernstein', degree=degree)
-      coeffs.append(elemcoeffs)
-      nmap.append(numeric.const(ndofs + numpy.arange(len(elemcoeffs)), copy=False))
-      ndofs += len(elemcoeffs)
-    degrees = set(n-1 for c in coeffs for n in c.shape[1:])
-    return function.polyfunc(coeffs, nmap, ndofs, (elem.transform for elem in self), issorted=False)
 
   def _basis_c0_structured(self, name, degree):
     'C^0-continuous shape functions with lagrange stucture'
