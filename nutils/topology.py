@@ -1962,10 +1962,22 @@ class HierarchicalTopology(Topology):
 
   @log.title
   def basis(self, name, *args, **kwargs):
+    '''The function :func:`basis` constructs the truncated hierarchical basis (thb) based on the refined topo structure :class:``topology``.
+
+    **parameters:** ``name``: type of basis funcions
+
+    **returns** ``basis``: truncated hierarchical basis
+
+    The thb is similar to the hierarchical basis, with improvements with respect to (Giannelli et al. 2012):
+
+    * Partition of unity
+    * Sparsity
+    * Stability
+
+    During the construction of the thb, basis functions are truncated based on the multi-level structure defined in the refinement step, meaning their support is shifted. This shift in overlap between different level funcions unsures the partition of unity is maintained. The construction of the basis is done elementwise in this implementation. For each element in the hierarchical mesh, functions are truncated and their coefficients are stored in the basis. The truncation is done from finest to coarsest level. This allows an efficient way to walk through all levels. https://www.sciencedirect.com/science/article/pii/S0167839612000519'''
+
     if name == 'discont':
       return super().basis(name, *args, **kwargs)
-
-    # This function constructs the truncated hierarchical basis with a given hierarchial mesh.
 
     #############################
     # Constructing funtion sets #
