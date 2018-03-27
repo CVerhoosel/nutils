@@ -1974,7 +1974,7 @@ class HierarchicalTopology(Topology):
     * Sparsity
     * Stability
 
-    During the construction of the thb, basis functions are truncated based on the multi-level structure defined in the refinement step, meaning their support is shifted. This shift in overlap between different level funcions unsures the partition of unity is maintained. The construction of the basis is done elementwise in this implementation. For each element in the hierarchical mesh, functions are truncated and their coefficients are stored in the basis. The truncation is done from finest to coarsest level. This allows an efficient way to walk through all levels. https://www.sciencedirect.com/science/article/pii/S0167839612000519'''
+    During the construction of the thb, basis functions are truncated based on the multi-level structure defined in the refinement step, meaning their support is shifted. This shift in overlap between different level funcions unsures the partition of unity is maintained. The construction of the basis is done elementwise in this implementation. For each element in the hierarchical mesh, functions are truncated and their coefficients are stored in the basis. The truncation is done from finest to coarsest level. This allows an efficient way to walk through all levels. https://pdfs.semanticscholar.org/a858/aa68da617ad9d41de021f6807cc422002258.pdf'''
 
     if name == 'discont':
       return super().basis(name, *args, **kwargs)
@@ -2049,7 +2049,7 @@ class HierarchicalTopology(Topology):
         trans_dofs  .extend( dof_renumber[hlevel][finer_ubasis_idofs[finer_ubasis_active]] )
         trans_coeffs.extend( finer_ubasis_icoeffs[finer_ubasis_active] )
 
-      elem_degree = finer_ubasis_icoeffs.shape[1] #TODO: GENERALIZE TO WORK FOR ALL CASES!
+      elem_degree = int((finer_ubasis_icoeffs.shape[-1]-1)/self.ndims)
 
       # ascend until the coarsest level
       for l in range(hlevel-1,-1,-1):
@@ -2060,7 +2060,7 @@ class HierarchicalTopology(Topology):
         (current_ubasis_idofs,), (current_ubasis_icoeffs,) = ubasis_dofscoeffs[l].eval(_transforms=(hbasis_trans,))
 
         ref = element.LineReference()**self.ndims
-        assert finer_ubasis_icoeffs.shape[1] == elem_degree
+        assert (int(finer_ubasis_icoeffs.shape[-1]-1)/self.ndims) == elem_degree
         points, weights = ref.getischeme('gauss{}'.format(2*elem_degree) ) # replace degree
 
         finer_ubasis_vals = numpy.array([numeric.poly_eval(numpy.array([poly]), points) for poly in finer_ubasis_icoeffs])

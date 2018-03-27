@@ -7,9 +7,33 @@ class basis(TestCase):
 
   def setUp(self):
     super().setUp()
-    self.domain, self.geom = mesh.rectilinear([[0,1,2]]*self.ndims) if self.ndims else mesh.demo()
+    self.domain, self.geom = mesh.rectilinear([[0,1,2,3]]*self.ndims) if self.ndims else mesh.demo()
+
+    #refinement code
+    if self.btype=='discont':
+        return
+
+    #C0 continuity
+    for imask in self.refined_by:
+
+        funcsp = self.domain.basis( self.btype, degree=self.degree )
+        mask     = numpy.zeros(len(funcsp), dtype=bool)
+
+        for ind in imask:
+            mask[ind]  = True
+        self.domain   = self.domain.refined_by( elem.transform for elem in self.domain.supp( funcsp, mask ) )
+
     self.basis = self.domain.basis(self.btype, degree=self.degree)
     self.gauss = 'gauss{}'.format(2*self.degree)
+
+  def test_continuity(self):
+    self.basis = self.domain.basis(self.btype, degree=self.degree)
+    tollerance = 10**-7
+    for r in range(self.degree):    
+      elem_jumps = self.domain.interfaces.elem_eval(function.jump(self.basis),ischeme = 'gauss1', separate=True)
+      numpy.testing.assert_allclose(elem_jumps,0,atol=tollerance**(1/(r+1)))
+
+      self.basis = function.grad(self.basis, self.geom)
 
   def test_pum(self):
     error = numpy.sqrt(self.domain.integrate((1-self.basis.sum(0))**2, geometry=self.geom, ischeme=self.gauss))
@@ -24,7 +48,7 @@ class basis(TestCase):
 for ndims in range(1, 4):
   for btype in 'discont', 'std', 'spline':
     for degree in range(0 if btype == 'discont' else 1, 4):
-      basis(btype=btype, degree=degree, ndims=ndims)
+      basis(btype=btype, degree=degree, ndims=ndims, refined_by=[[1]])
 
 
 @parametrize
