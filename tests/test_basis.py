@@ -9,46 +9,36 @@ class basis(TestCase):
     super().setUp()
     self.domain, self.geom = mesh.rectilinear([[0,1,2,3]]*self.ndims) if self.ndims else mesh.demo()
 
-    #refinement code
-    if self.btype=='discont':
-        return
-
-    #C0 continuity
-    for imask in self.refined_by:
-
-        funcsp = self.domain.basis( self.btype, degree=self.degree )
-        mask     = numpy.zeros(len(funcsp), dtype=bool)
-
-        for ind in imask:
-            mask[ind]  = True
-        self.domain   = self.domain.refined_by( elem.transform for elem in self.domain.supp( funcsp, mask ) )
+    # local refinements
+    for iref in self.refined_by:
+      funcsp = self.domain.basis( self.btype, degree=self.degree )
+      self.domain   = self.domain.refined_by( elem.transform for elem in self.domain.supp(funcsp, [(True if i in iref else False) for i in range(len(funcsp))]) )
 
     self.basis = self.domain.basis(self.btype, degree=self.degree)
     self.gauss = 'gauss{}'.format(2*self.degree)
 
+  @parametrize.skip_if(lambda btype, **params: btype=='discont', 'not applicable for discontinuous basis')
   def test_continuity(self):
-    self.basis = self.domain.basis(self.btype, degree=self.degree)
-    tollerance = 10**-7
-    for r in range(self.degree):    
-      elem_jumps = self.domain.interfaces.elem_eval(function.jump(self.basis),ischeme = 'gauss1', separate=True)
-      numpy.testing.assert_allclose(elem_jumps,0,atol=tollerance**(1/(r+1)))
-
-      self.basis = function.grad(self.basis, self.geom)
+    funcsp = self.basis
+    for regularity in (range(self.degree) if self.btype=='spline' else [0]):
+      elem_jumps = self.domain.interfaces.elem_eval(function.jump(funcsp),ischeme = 'gauss2', separate=False)
+      numpy.testing.assert_almost_equal(elem_jumps,0,decimal=9)
+      funcsp = function.grad(self.basis, self.geom)
 
   def test_pum(self):
     error = numpy.sqrt(self.domain.integrate((1-self.basis.sum(0))**2, geometry=self.geom, ischeme=self.gauss))
-    numpy.testing.assert_almost_equal(error, 0, decimal=14)
+    numpy.testing.assert_almost_equal(error, 0, decimal=10)
 
   def test_poly(self):
     target = (self.geom**self.degree).sum(-1)
     projection = self.domain.projection(target, onto=self.basis, geometry=self.geom, ischeme=self.gauss, droptol=0)
     error = numpy.sqrt(self.domain.integrate((target-projection)**2, geometry=self.geom, ischeme=self.gauss))
-    numpy.testing.assert_almost_equal(error, 0, decimal=12)
+    numpy.testing.assert_almost_equal(error, 0, decimal=10)
 
 for ndims in range(1, 4):
   for btype in 'discont', 'std', 'spline':
     for degree in range(0 if btype == 'discont' else 1, 4):
-      basis(btype=btype, degree=degree, ndims=ndims, refined_by=[[1]])
+      basis(btype=btype, degree=degree, ndims=ndims, refined_by=((1,),))
 
 
 @parametrize

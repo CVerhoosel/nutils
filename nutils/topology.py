@@ -1962,9 +1962,10 @@ class HierarchicalTopology(Topology):
 
   @log.title
   def basis(self, name, *args, **kwargs):
+
     '''The function :func:`basis` constructs the truncated hierarchical basis (thb) based on the refined topo structure :class:``topology``.
 
-    **parameters:** ``name``: type of basis funcions
+    **parameters:** ``name``: type of basis functions
 
     **returns** ``basis``: truncated hierarchical basis
 
@@ -1976,6 +1977,7 @@ class HierarchicalTopology(Topology):
 
     During the construction of the thb, basis functions are truncated based on the multi-level structure defined in the refinement step, meaning their support is shifted. This shift in overlap between different level funcions unsures the partition of unity is maintained. The construction of the basis is done elementwise in this implementation. For each element in the hierarchical mesh, functions are truncated and their coefficients are stored in the basis. The truncation is done from finest to coarsest level. This allows an efficient way to walk through all levels. https://pdfs.semanticscholar.org/a858/aa68da617ad9d41de021f6807cc422002258.pdf'''
 
+    # use topology base class implementation for discontinuous bases
     if name == 'discont':
       return super().basis(name, *args, **kwargs)
 
@@ -1993,8 +1995,8 @@ class HierarchicalTopology(Topology):
 
       ubasis = ltopo.basis(name, *args, **kwargs)
 
-      on_current = numpy.zeros(len(ubasis), dtype=bool)   # functions in basis β^l with support on Ω^l \ Ω^{l+1}
-      on_coarser = numpy.zeros(len(ubasis), dtype=bool)   # functions in basis β^l with support on Ω^0 \ Ω^l
+      on_current = numpy.zeros(len(ubasis), dtype=bool) # functions in basis β^l with support on Ω^l \ Ω^{l+1}
+      on_coarser = numpy.zeros(len(ubasis), dtype=bool) # functions in basis β^l with support on Ω^0 \ Ω^l
 
       # get the basis dofmap and coefficients
       (ubasis_axes,ubasis_func), = function.blocks(ubasis)
@@ -2007,15 +2009,13 @@ class HierarchicalTopology(Topology):
         trans = elem.transform
         ubasis_idofs, = ubasis_dofscoeffs[-1][0].eval (_transforms=(trans, elem.opposite))
 
-        if trans in self.edict:
-          # mark functions with support on current level Ω^l \ Ω^{l+1}
+        if trans in self.edict: # mark functions with support on current level Ω^l \ Ω^{l+1}
           on_current[ubasis_idofs] = True
-        elif transform.lookup(trans, self.edict):
-          # mark functions with support on coarser level Ω^0 \ Ω^l
+        elif transform.lookup(trans, self.edict): # mark functions with support on coarser level Ω^0 \ Ω^l
           on_coarser[ubasis_idofs] = True
 
-      ubasis_active  .append( (on_current & ~on_coarser) )           # functions with support on Ω^l \ Ω^{l+1} and not on Ω^0 \ Ω^l
-      ubasis_passive .append( on_coarser )                           # passive functions are (unactive) functions with support on Ω^0 \ Ω^l
+      ubasis_active  .append( (on_current & ~on_coarser) ) # functions with support on Ω^l \ Ω^{l+1} and not on Ω^0 \ Ω^l
+      ubasis_passive .append( on_coarser )                 # passive functions are (unactive) functions with support on Ω^0 \ Ω^l
 
       dof_renumber.append( numpy.cumsum((on_current & ~on_coarser))+offset ) # active functions are assigned an index in the truncated hierarchical basis
       offset += sum(ubasis_active[-1])
@@ -2033,7 +2033,7 @@ class HierarchicalTopology(Topology):
       trans_dofs = []
       trans_coeffs = []
 
-      # determing the level of the hierarchicafiner_ubasis_passivel element
+      # determine the level of the hierarchical element
       ibase, tail = transform.lookup_item(hbasis_trans, self.basetopo.edict)
       hlevel = len(tail)
 
@@ -2049,7 +2049,8 @@ class HierarchicalTopology(Topology):
         trans_dofs  .extend( dof_renumber[hlevel][finer_ubasis_idofs[finer_ubasis_active]] )
         trans_coeffs.extend( finer_ubasis_icoeffs[finer_ubasis_active] )
 
-      elem_degree = int((finer_ubasis_icoeffs.shape[-1]-1)/self.ndims)
+      elem_degree = finer_ubasis_icoeffs.shape[1]-1
+      assert all(sh-1==elem_degree for sh in finer_ubasis_icoeffs.shape[1:])
 
       # ascend until the coarsest level
       for l in range(hlevel-1,-1,-1):
@@ -2060,8 +2061,8 @@ class HierarchicalTopology(Topology):
         (current_ubasis_idofs,), (current_ubasis_icoeffs,) = ubasis_dofscoeffs[l].eval(_transforms=(hbasis_trans,))
 
         ref = element.LineReference()**self.ndims
-        assert (int(finer_ubasis_icoeffs.shape[-1]-1)/self.ndims) == elem_degree
-        points, weights = ref.getischeme('gauss{}'.format(2*elem_degree) ) # replace degree
+        assert all(sh-1==elem_degree for sh in finer_ubasis_icoeffs.shape[1:])
+        points, weights = ref.getischeme('gauss{}'.format(2*elem_degree))
 
         finer_ubasis_vals = numpy.array([numeric.poly_eval(numpy.array([poly]), points) for poly in finer_ubasis_icoeffs])
         current_ubasis_vals = numpy.array([numeric.poly_eval(numpy.array([poly]), points) for poly in transform.transform_poly(tail[l:],current_ubasis_icoeffs)])
@@ -2073,7 +2074,7 @@ class HierarchicalTopology(Topology):
         current_ubasis_active  = ubasis_active [l][current_ubasis_idofs]
         current_ubasis_passive = ubasis_passive[l][current_ubasis_idofs]
 
-        tbasis_icoeffs = numpy.tensordot(scales[finer_ubasis_passive].T, tbasis_icoeffs[finer_ubasis_passive], axes = 1) # Tensordot for multivariate cases
+        tbasis_icoeffs = numpy.tensordot(scales[finer_ubasis_passive].T, tbasis_icoeffs[finer_ubasis_passive], axes=1) # tensordot for multivariate cases
 
         if current_ubasis_active.any():
           trans_dofs.extend(dof_renumber[l][current_ubasis_idofs[current_ubasis_active]])
@@ -2082,9 +2083,6 @@ class HierarchicalTopology(Topology):
         finer_ubasis_idofs   = current_ubasis_idofs
         finer_ubasis_icoeffs = transform.transform_poly(tail[l:],current_ubasis_icoeffs)
         finer_ubasis_passive = ubasis_passive[l][finer_ubasis_idofs]
-
-
-      assert len(trans_dofs)>=elem_degree, 'error msg' #determine degree per element
 
       # add the dofs and coefficients to the hierarchical basis
       hbasis_dofs  .append( numeric.const(trans_dofs)        )
