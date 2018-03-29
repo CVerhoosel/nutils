@@ -7,11 +7,12 @@ class basis(TestCase):
 
   def setUp(self):
     super().setUp()
-    self.domain, self.geom = mesh.rectilinear([[0,1,2,3]]*self.ndims) if self.ndims else mesh.demo()
+    self.domain, self.geom = mesh.rectilinear([[0,1,2]]*self.ndims) if self.ndims else mesh.demo()
 
     # local refinements
     for iref in self.refined_by:
       funcsp = self.domain.basis( self.btype, degree=self.degree )
+      iref.extend([int(0.5*x-0.5*abs(x)+len(funcsp)) for x in iref])
       self.domain   = self.domain.refined_by( elem.transform for elem in self.domain.supp(funcsp, [(True if i in iref else False) for i in range(len(funcsp))]) )
 
     self.basis = self.domain.basis(self.btype, degree=self.degree)
@@ -22,23 +23,23 @@ class basis(TestCase):
     funcsp = self.basis
     for regularity in (range(self.degree) if self.btype=='spline' else [0]):
       elem_jumps = self.domain.interfaces.elem_eval(function.jump(funcsp),ischeme = 'gauss2', separate=False)
-      numpy.testing.assert_almost_equal(elem_jumps,0,decimal=9)
+      numpy.testing.assert_almost_equal(elem_jumps,0,decimal=6)
       funcsp = function.grad(self.basis, self.geom)
 
   def test_pum(self):
     error = numpy.sqrt(self.domain.integrate((1-self.basis.sum(0))**2, geometry=self.geom, ischeme=self.gauss))
-    numpy.testing.assert_almost_equal(error, 0, decimal=10)
+    numpy.testing.assert_almost_equal(error, 0, decimal=8)
 
   def test_poly(self):
     target = (self.geom**self.degree).sum(-1)
     projection = self.domain.projection(target, onto=self.basis, geometry=self.geom, ischeme=self.gauss, droptol=0)
     error = numpy.sqrt(self.domain.integrate((target-projection)**2, geometry=self.geom, ischeme=self.gauss))
-    numpy.testing.assert_almost_equal(error, 0, decimal=10)
+    numpy.testing.assert_almost_equal(error, 0, decimal=8)
 
 for ndims in range(1, 4):
   for btype in 'discont', 'std', 'spline':
     for degree in range(0 if btype == 'discont' else 1, 4):
-      basis(btype=btype, degree=degree, ndims=ndims, refined_by=((1,),))
+      basis(btype=btype, degree=degree, ndims=ndims, refined_by=[[1,],[-1]])
 
 
 @parametrize
