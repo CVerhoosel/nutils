@@ -23,7 +23,7 @@ class basis(TestCase):
     funcsp = self.basis
     for regularity in (range(self.degree) if self.btype=='spline' else [0]):
       elem_jumps = self.domain.interfaces.elem_eval(function.jump(funcsp),ischeme = 'gauss2', separate=False)
-      numpy.testing.assert_almost_equal(elem_jumps,0,decimal=6)
+      numpy.testing.assert_almost_equal(elem_jumps,0,decimal=8)
       funcsp = function.grad(self.basis, self.geom)
 
   def test_pum(self):
@@ -39,7 +39,7 @@ class basis(TestCase):
 for ndims in range(1, 4):
   for btype in 'discont', 'std', 'spline':
     for degree in range(0 if btype == 'discont' else 1, 4):
-      basis(btype=btype, degree=degree, ndims=ndims, refined_by=[[1,],[-1]])
+      basis(btype=btype, degree=degree, ndims=ndims, refined_by=[[1],[-1]] if ndims == 1 else [[1]])
 
 
 @parametrize
