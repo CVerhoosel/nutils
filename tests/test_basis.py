@@ -18,13 +18,13 @@ class basis(TestCase):
     self.basis = self.domain.basis(self.btype, degree=self.degree)
     self.gauss = 'gauss{}'.format(2*self.degree)
 
-  @parametrize.skip_if(lambda btype, **params: btype=='discont', 'not applicable for discontinuous basis')
   def test_continuity(self):
     funcsp = self.basis
-    for regularity in (range(self.degree) if self.btype=='spline' else [0]):
-      elem_jumps = self.domain.interfaces.elem_eval(function.jump(funcsp),ischeme = 'gauss2', separate=False)
-      numpy.testing.assert_almost_equal(elem_jumps,0,decimal=8)
-      funcsp = function.grad(self.basis, self.geom)
+    if not self.btype=='discont':
+      for regularity in (range(self.degree) if self.btype=='spline' else [0]):
+        elem_jumps = self.domain.interfaces.elem_eval(function.jump(funcsp),ischeme = 'gauss2', separate=False)
+        numpy.testing.assert_almost_equal(elem_jumps,0,decimal=8)
+        funcsp = function.grad(self.basis, self.geom)
 
   def test_pum(self):
     error = numpy.sqrt(self.domain.integrate((1-self.basis.sum(0))**2, geometry=self.geom, ischeme=self.gauss))
